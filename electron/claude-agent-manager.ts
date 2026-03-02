@@ -319,7 +319,7 @@ export class ClaudeAgentManager {
               })
             })
           }
-          return { behavior: 'allow' }
+          return { behavior: 'allow', updatedInput: input as Record<string, unknown> }
         }
 
         // For all other tools, send permission request to frontend

@@ -306,10 +306,16 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
   // Subscribe to IPC events
   useEffect(() => {
     const api = window.electronAPI.claude
+    const tag = `[Claude:${sessionId.slice(0, 8)}]`
+    console.log(`${tag} subscribing to IPC events`)
 
     const unsubs = [
       api.onMessage((sid: string, msg: unknown) => {
-        if (sid !== sessionId) return
+        if (sid !== sessionId) {
+          console.log(`${tag} SKIP onMessage sid=${sid.slice(0, 8)} (mine=${sessionId.slice(0, 8)})`)
+          return
+        }
+        console.log(`${tag} onMessage`, (msg as ClaudeMessage).id)
         workspaceStore.updateTerminalActivity(sessionId)
         const message = msg as ClaudeMessage
         // On restart, sys-init message arrives again — reset messages
@@ -394,7 +400,11 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
       }),
 
       api.onStatus((sid: string, meta: unknown) => {
-        if (sid !== sessionId) return
+        if (sid !== sessionId) {
+          console.log(`${tag} SKIP onStatus sid=${sid.slice(0, 8)} (mine=${sessionId.slice(0, 8)})`)
+          return
+        }
+        console.log(`${tag} onStatus sdkSessionId=${((meta as SessionMeta).sdkSessionId || '').slice(0, 8)}`)
         const m = meta as SessionMeta
         setSessionMeta(m)
         if (m.model) setCurrentModel(m.model)
@@ -426,7 +436,11 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
       }),
 
       api.onHistory((sid: string, items: unknown[]) => {
-        if (sid !== sessionId) return
+        if (sid !== sessionId) {
+          console.log(`${tag} SKIP onHistory sid=${sid.slice(0, 8)} items=${(items as unknown[]).length} (mine=${sessionId.slice(0, 8)})`)
+          return
+        }
+        console.log(`${tag} onHistory items=${(items as unknown[]).length}`)
         historyLoadedRef.current = true
         // Replace messages with the full history batch and clear archive state
         setMessages(items as MessageItem[])
@@ -459,6 +473,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
     ]
 
     return () => {
+      console.log(`${tag} unsubscribing IPC events`)
       unsubs.forEach(unsub => unsub())
     }
   }, [sessionId])
@@ -466,6 +481,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
   // Start session on mount (guarded against StrictMode double-mount)
   // If a saved sdkSessionId exists (from a previous /resume), auto-resume that session
   useEffect(() => {
+    const stag = `[Claude:${sessionId.slice(0, 8)}]`
     if (!sessionStartedRef.current && !startedSessions.has(sessionId)) {
       sessionStartedRef.current = true
       startedSessions.add(sessionId)
@@ -474,10 +490,11 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
       const savedSdkSessionId = terminal?.sdkSessionId
 
       if (savedSdkSessionId) {
-        // Auto-resume the previously saved session
+        console.log(`${stag} AUTO-RESUME sdkSessionId=${savedSdkSessionId.slice(0, 8)}`)
         historyLoadedRef.current = true
         window.electronAPI.claude.resumeSession(sessionId, savedSdkSessionId, cwd)
       } else {
+        console.log(`${stag} FRESH startSession`)
         window.electronAPI.claude.startSession(sessionId, { cwd, permissionMode: 'bypassPermissions' })
       }
     }
@@ -553,6 +570,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
   }, [sessionId])
 
   const handleResumeSelect = useCallback(async (sdkSessionId: string) => {
+    console.log(`[Claude:${sessionId.slice(0, 8)}] handleResumeSelect sdkSessionId=${sdkSessionId.slice(0, 8)}`)
     setShowResumeList(false)
     setResumeSessions([])
     // Clear UI immediately so user sees the switch
