@@ -407,6 +407,10 @@ export class ClaudeAgentManager {
         // Check abort
         if (session.abortController.signal.aborted) break
 
+        // Temporary: log all message types to debug /context and ctx tracking
+        const msgPreview = JSON.stringify(message).slice(0, 300)
+        fsSync.appendFileSync('/tmp/bat-ctx.log', `${new Date().toISOString()} [msg] type=${(message as Record<string,unknown>).type} subtype=${(message as Record<string,unknown>).subtype || ''} ${msgPreview}\n`)
+
         if (message.type === 'system' && message.subtype === 'init') {
           // Capture and persist the SDK session ID
           const initMsg = message as { session_id: string; model?: string; cwd?: string; permissionMode?: string }
