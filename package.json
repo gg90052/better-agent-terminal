@@ -4,7 +4,7 @@
   "description": "Windows terminal aggregator with multi-workspace support and Claude Code integration",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "cross-env BAT_DEBUG=1 vite",
     "compile": "vite build",
     "start": "electron .",
     "build": "vite build && electron-builder",
@@ -43,6 +43,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.2.0",
     "concurrently": "^8.2.0",
+    "cross-env": "^10.1.0",
     "electron": "^28.3.3",
     "electron-builder": "^24.0.0",
     "png-to-ico": "^3.0.1",

@@ -224,6 +224,9 @@ const electronAPI = {
       return () => ipcRenderer.removeListener('system:resume', handler)
     },
   },
+  debug: {
+    log: (...args: unknown[]) => ipcRenderer.send('debug:log', ...args),
+  },
   snippet: {
     getAll: () => ipcRenderer.invoke('snippet:getAll'),
     getById: (id: number) => ipcRenderer.invoke('snippet:getById', id),

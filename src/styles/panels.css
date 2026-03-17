@@ -110,15 +110,13 @@
   min-height: 40px;
   flex: 1;
   background: var(--glass-bg);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   cursor: pointer;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 .thumbnail:hover {
@@ -227,6 +225,7 @@
 .terminal-panel {
   height: 100%;
   width: 100%;
+  contain: layout style;
 }
 
 .terminal-panel .xterm {
