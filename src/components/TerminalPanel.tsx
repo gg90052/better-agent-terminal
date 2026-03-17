@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, memo } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -22,7 +22,7 @@ interface ContextMenu {
 }
 
 let renderCount = 0
-export function TerminalPanel({ terminalId, isActive = true, terminalType }: TerminalPanelProps) {
+export const TerminalPanel = memo(function TerminalPanel({ terminalId, isActive = true, terminalType }: TerminalPanelProps) {
   renderCount++
   if (renderCount <= 50 || renderCount % 50 === 0) {
     dlog(`[render] TerminalPanel render #${renderCount} terminal=${terminalId} active=${isActive}`)
@@ -462,4 +462,4 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
       )}
     </div>
   )
-}
+})

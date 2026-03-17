@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, memo } from 'react'
 import type { TerminalInstance } from '../types'
 import { ActivityIndicator } from './ActivityIndicator'
 import { settingsStore } from '../stores/settings-store'
@@ -93,7 +93,7 @@ interface TerminalThumbnailProps {
 
 const dlog = (...args: unknown[]) => window.electronAPI?.debug?.log(...args)
 let thumbRenderCount = 0
-export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumbnailProps) {
+export const TerminalThumbnail = memo(function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumbnailProps) {
   thumbRenderCount++
   if (thumbRenderCount <= 30 || thumbRenderCount % 50 === 0) {
     dlog(`[render] Thumbnail render #${thumbRenderCount} id=${terminal.id.slice(0,8)} active=${isActive}`)
@@ -143,4 +143,4 @@ export function TerminalThumbnail({ terminal, isActive, onClick }: TerminalThumb
       </div>
     </div>
   )
-}
+})

@@ -151,8 +151,11 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
     initializedWorkspaces.add(workspace.id)
 
     const initTerminals = async () => {
+      const dlog = (...args: unknown[]) => window.electronAPI?.debug?.log(...args)
+      const t0 = performance.now()
       const settings = settingsStore.getSettings()
       const shell = await getShellFromSettings()
+      dlog(`[init] getShellFromSettings: ${(performance.now() - t0).toFixed(0)}ms`)
       const customEnv = mergeEnvVars(settings.globalEnvVars, workspace.envVars)
 
       if (terminals.length > 0) {
@@ -221,6 +224,7 @@ export function WorkspaceView({ workspace, terminals, focusedTerminalId, isActiv
         // Persist newly created default terminals
         workspaceStore.save()
       }
+      dlog(`[init] initTerminals total: ${(performance.now() - t0).toFixed(0)}ms, terminals=${terminals.length}`)
     }
     initTerminals()
   }, [isActive, workspace.id, terminals.length, workspace.defaultAgent, workspace.folderPath, workspace.envVars])

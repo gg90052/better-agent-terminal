@@ -65,11 +65,6 @@ export default function App() {
   const [showProfiles, setShowProfiles] = useState(false)
   const [activeProfileName, setActiveProfileName] = useState<string>('Default')
   const [isRemoteConnected, setIsRemoteConnected] = useState(false)
-
-  // Sync window title with active profile
-  useEffect(() => {
-    document.title = `Better Terminal - ${activeProfileName}`
-  }, [activeProfileName])
   const [appNotification, setAppNotification] = useState<string | null>(null)
   const [envDialogWorkspaceId, setEnvDialogWorkspaceId] = useState<string | null>(null)
   // Snippet sidebar is always visible by default
@@ -79,6 +74,20 @@ export default function App() {
   // Detached workspace support
   const [detachedWorkspaceId] = useState(() => window.electronAPI.workspace.getDetachedId())
   const [detachedIds, setDetachedIds] = useState<Set<string>>(new Set())
+  // Track workspaces that have been visited (for lazy mounting)
+  const [mountedWorkspaces, setMountedWorkspaces] = useState<Set<string>>(new Set())
+
+  // Sync window title with active profile
+  useEffect(() => {
+    document.title = `Better Terminal - ${activeProfileName}`
+  }, [activeProfileName])
+
+  // Lazy mount: only render a workspace's terminals once it has been activated
+  useEffect(() => {
+    if (state.activeWorkspaceId && !mountedWorkspaces.has(state.activeWorkspaceId)) {
+      setMountedWorkspaces(prev => new Set(prev).add(state.activeWorkspaceId!))
+    }
+  }, [state.activeWorkspaceId, mountedWorkspaces])
 
   // Handle sidebar resize
   const handleSidebarResize = useCallback((delta: number) => {
@@ -142,10 +151,17 @@ export default function App() {
 
     // Load saved workspaces and settings on startup
     // If launched with --profile, use that profile instead of the stored active one
+    const dlog = (...args: unknown[]) => window.electronAPI?.debug?.log(...args)
     const initProfile = async () => {
+      const t0 = performance.now()
       try {
         const launchProfileId = await window.electronAPI.app.getLaunchProfile()
+        dlog(`[init] getLaunchProfile: ${(performance.now() - t0).toFixed(0)}ms`)
+
+        const t1 = performance.now()
         const result = await window.electronAPI.profile.list()
+        dlog(`[init] profile.list: ${(performance.now() - t1).toFixed(0)}ms`)
+
         // Use launch profile if provided (new window), otherwise use stored active profile
         const active = launchProfileId
           ? result.profiles.find(p => p.id === launchProfileId)
@@ -153,11 +169,13 @@ export default function App() {
 
         if (active?.type === 'remote' && active.remoteHost && active.remoteToken) {
           // Try connecting to remote
+          const tRemote = performance.now()
           const connectResult = await window.electronAPI.remote.connect(
             active.remoteHost,
             active.remotePort || 9876,
             active.remoteToken
           )
+          dlog(`[init] remote.connect: ${(performance.now() - tRemote).toFixed(0)}ms`)
           if ('error' in connectResult) {
             if (launchProfileId) {
               // New window launch failed — show error and close instead of corrupting shared state
@@ -194,14 +212,22 @@ export default function App() {
           const fallback = result.profiles.find(p => p.type !== 'remote') || result.profiles[0]
           setActiveProfileName(fallback.name)
         }
+
+        const tLoad = performance.now()
+        // Load settings first (lightweight, no re-render), then workspaces (triggers heavy re-render)
+        await settingsStore.load()
+        dlog(`[init] settingsStore.load: ${(performance.now() - tLoad).toFixed(0)}ms`)
+
+        const tWs = performance.now()
         await workspaceStore.load()
-        settingsStore.load()
+        dlog(`[init] workspaceStore.load: ${(performance.now() - tWs).toFixed(0)}ms`)
       } catch (e) {
         console.error('Failed to initialize profile:', e)
         // Ensure workspaces still load even if profile init fails
+        await settingsStore.load()
         await workspaceStore.load()
-        settingsStore.load()
       }
+      dlog(`[init] total initProfile: ${(performance.now() - t0).toFixed(0)}ms`)
     }
     initProfile()
 
@@ -416,8 +442,8 @@ export default function App() {
       />
       <main className="main-content">
         {visibleWorkspaces.length > 0 ? (
-          // Render visible workspaces (excluding detached ones), hide inactive with CSS
-          visibleWorkspaces.map(workspace => (
+          // Only mount workspaces that have been visited (lazy mount)
+          visibleWorkspaces.filter(w => mountedWorkspaces.has(w.id)).map(workspace => (
             <div
               key={workspace.id}
               className={`workspace-container ${workspace.id === state.activeWorkspaceId ? 'active' : 'hidden'}`}

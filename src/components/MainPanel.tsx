@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import type { TerminalInstance } from '../types'
 import { TerminalPanel } from './TerminalPanel'
 import { ClaudeAgentPanel } from './ClaudeAgentPanel'
@@ -15,7 +15,7 @@ interface MainPanelProps {
   workspaceId?: string
 }
 
-export function MainPanel({ terminal, isActive, onClose, onRestart, workspaceId }: Readonly<MainPanelProps>) {
+export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, onRestart, workspaceId }: Readonly<MainPanelProps>) {
   const isAgent = terminal.agentPreset && terminal.agentPreset !== 'none'
   const isClaudeCode = terminal.agentPreset === 'claude-code'
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
@@ -114,4 +114,4 @@ export function MainPanel({ terminal, isActive, onClose, onRestart, workspaceId 
       )}
     </div>
   )
-}
+})

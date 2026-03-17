@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, powerMonitor, clipboard, nativeImage } from 'electron'
 import path from 'path'
 import * as fs from 'fs/promises'
+import * as fsSync from 'fs'
 import { execFileSync } from 'child_process'
 
 // Fix PATH for GUI-launched apps on macOS.
@@ -246,10 +247,24 @@ const profileArg = process.argv.find(a => a.startsWith('--profile='))
 const launchProfileId = profileArg ? profileArg.split('=')[1] || null : null
 
 app.whenReady().then(async () => {
+  const t0 = Date.now()
   logger.init(app.getPath('userData'))
+  logger.log(`[startup] app.whenReady fired at +${t0 - _t0}ms from module load`)
+  const t1 = Date.now()
   buildMenu()
+  logger.log(`[startup] buildMenu: ${Date.now() - t1}ms`)
   remoteServer.configDir = app.getPath('userData')
+  const t2 = Date.now()
   createWindow()
+  logger.log(`[startup] createWindow: ${Date.now() - t2}ms`)
+  if (mainWindow) {
+    mainWindow.webContents.on('did-finish-load', () => {
+      logger.log(`[startup] did-finish-load: +${Date.now() - t0}ms from whenReady`)
+    })
+    mainWindow.webContents.on('dom-ready', () => {
+      logger.log(`[startup] dom-ready: +${Date.now() - t0}ms from whenReady`)
+    })
+  }
 
   // Listen for system resume from sleep/hibernate
   powerMonitor.on('resume', () => {
@@ -329,32 +344,45 @@ function registerProxiedHandlers() {
     const configPath = path.join(app.getPath('userData'), 'settings.json')
     try { return await fs.readFile(configPath, 'utf-8') } catch { return null }
   })
-  registerHandler('settings:get-shell-path', async (shellType: string) => {
-    const fsSync = await import('fs')
+  const shellPathCache = new Map<string, string>()
+  registerHandler('settings:get-shell-path', (shellType: string) => {
+    const cached = shellPathCache.get(shellType)
+    if (cached) return cached
+
+    let result: string
     if (process.platform === 'darwin' || process.platform === 'linux') {
-      if (shellType === 'auto') return process.env.SHELL || '/bin/zsh'
-      if (shellType === 'zsh') return '/bin/zsh'
-      if (shellType === 'bash') {
-        if (fsSync.existsSync('/opt/homebrew/bin/bash')) return '/opt/homebrew/bin/bash'
-        if (fsSync.existsSync('/usr/local/bin/bash')) return '/usr/local/bin/bash'
-        return '/bin/bash'
+      if (shellType === 'auto') result = process.env.SHELL || '/bin/zsh'
+      else if (shellType === 'zsh') result = '/bin/zsh'
+      else if (shellType === 'bash') {
+        if (fsSync.existsSync('/opt/homebrew/bin/bash')) result = '/opt/homebrew/bin/bash'
+        else if (fsSync.existsSync('/usr/local/bin/bash')) result = '/usr/local/bin/bash'
+        else result = '/bin/bash'
       }
-      if (shellType === 'sh') return '/bin/sh'
-      if (shellType === 'pwsh' || shellType === 'powershell' || shellType === 'cmd') return process.env.SHELL || '/bin/zsh'
-      return shellType
+      else if (shellType === 'sh') result = '/bin/sh'
+      else if (shellType === 'pwsh' || shellType === 'powershell' || shellType === 'cmd') result = process.env.SHELL || '/bin/zsh'
+      else result = shellType
+    } else {
+      if (shellType === 'auto' || shellType === 'pwsh') {
+        const pwshPaths = [
+          'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+          'C:\\Program Files (x86)\\PowerShell\\7\\pwsh.exe',
+          process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\pwsh.exe'
+        ]
+        let found = ''
+        for (const p of pwshPaths) { if (fsSync.existsSync(p)) { found = p; break } }
+        if (found) result = found
+        else if (shellType === 'pwsh') result = 'pwsh.exe'
+        else if (shellType === 'auto' || shellType === 'powershell') result = 'powershell.exe'
+        else if (shellType === 'cmd') result = 'cmd.exe'
+        else result = shellType
+      }
+      else if (shellType === 'powershell') result = 'powershell.exe'
+      else if (shellType === 'cmd') result = 'cmd.exe'
+      else result = shellType
     }
-    if (shellType === 'auto' || shellType === 'pwsh') {
-      const pwshPaths = [
-        'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-        'C:\\Program Files (x86)\\PowerShell\\7\\pwsh.exe',
-        process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\pwsh.exe'
-      ]
-      for (const p of pwshPaths) { if (fsSync.existsSync(p)) return p }
-      if (shellType === 'pwsh') return 'pwsh.exe'
-    }
-    if (shellType === 'auto' || shellType === 'powershell') return 'powershell.exe'
-    if (shellType === 'cmd') return 'cmd.exe'
-    return shellType
+
+    shellPathCache.set(shellType, result)
+    return result
   })
 
   // Claude Agent SDK
@@ -750,6 +778,8 @@ function registerLocalHandlers() {
 }
 
 // ── Initialize all IPC ──
+const _t0 = Date.now()
 registerProxiedHandlers()
 bindProxiedHandlersToIpc()
 registerLocalHandlers()
+console.log(`[startup] IPC registration: ${Date.now() - _t0}ms`)
