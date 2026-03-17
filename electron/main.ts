@@ -67,6 +67,27 @@ const remoteServer = new RemoteServer()
 let remoteClient: RemoteClient | null = null
 const detachedWindows = new Map<string, BrowserWindow>() // workspaceId → BrowserWindow
 
+/** Attach a will-resize throttle to a BrowserWindow to reduce DWM pressure on Windows. */
+function setupResizeThrottle(win: BrowserWindow, label: string) {
+  let lastResizeTime = 0
+  let throttledCount = 0
+  win.on('will-resize', (event, newBounds) => {
+    const now = Date.now()
+    const elapsed = now - lastResizeTime
+    if (elapsed < 100) {
+      event.preventDefault()
+      throttledCount++
+    } else {
+      if (throttledCount > 0) {
+        logger.log(`[resize] ${label} will-resize: ${throttledCount} events throttled since last ALLOWED`)
+        throttledCount = 0
+      }
+      lastResizeTime = now
+      logger.log(`[resize] ${label} will-resize ALLOWED ${newBounds.width}x${newBounds.height}`)
+    }
+  })
+}
+
 function getAllWindows(): BrowserWindow[] {
   const wins: BrowserWindow[] = []
   if (mainWindow && !mainWindow.isDestroyed()) wins.push(mainWindow)
@@ -192,22 +213,12 @@ function createWindow() {
 
   if (VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(VITE_DEV_SERVER_URL)
-    mainWindow.webContents.openDevTools()
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
-  // Throttle window resize to reduce DWM pressure on Windows
-  // Windows sends high-frequency resize events during drag; software rendering can't keep up
-  let lastResizeTime = 0
-  mainWindow.on('will-resize', (event) => {
-    const now = Date.now()
-    if (now - lastResizeTime < 32) { // Cap at ~30fps
-      event.preventDefault()
-    } else {
-      lastResizeTime = now
-    }
-  })
+  setupResizeThrottle(mainWindow, 'main')
 
   mainWindow.on('closed', () => {
     // Close all detached windows when main window closes
@@ -289,7 +300,10 @@ function registerProxiedHandlers() {
   // PTY
   registerHandler('pty:create', (options: unknown) => ptyManager?.create(options as import('../src/types').CreatePtyOptions))
   registerHandler('pty:write', (id: string, data: string) => ptyManager?.write(id, data))
-  registerHandler('pty:resize', (id: string, cols: number, rows: number) => ptyManager?.resize(id, cols, rows))
+  registerHandler('pty:resize', (id: string, cols: number, rows: number) => {
+    logger.log(`[resize] pty:resize id=${id} cols=${cols} rows=${rows}`)
+    return ptyManager?.resize(id, cols, rows)
+  })
   registerHandler('pty:kill', (id: string) => ptyManager?.kill(id))
   registerHandler('pty:restart', (id: string, cwd: string, shellPath?: string) => ptyManager?.restart(id, cwd, shellPath))
   registerHandler('pty:get-cwd', (id: string) => ptyManager?.getCwd(id))
@@ -553,6 +567,11 @@ function bindProxiedHandlersToIpc() {
   }
 }
 
+// ── Renderer debug log (fire-and-forget, no blocking) ──
+ipcMain.on('debug:log', (_event, ...args: unknown[]) => {
+  logger.log('[renderer]', ...args)
+})
+
 // ── Local-only IPC handlers (not proxied) ──
 
 function registerLocalHandlers() {
@@ -686,16 +705,7 @@ function registerLocalHandlers() {
       webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true },
       frame: true, titleBarStyle: 'default', icon: path.join(__dirname, '../assets/icon.ico')
     })
-    // Throttle resize to reduce DWM pressure on Windows (same as main window)
-    let lastDetachedResize = 0
-    detachedWin.on('will-resize', (event) => {
-      const now = Date.now()
-      if (now - lastDetachedResize < 32) {
-        event.preventDefault()
-      } else {
-        lastDetachedResize = now
-      }
-    })
+    setupResizeThrottle(detachedWin, 'detached')
     detachedWindows.set(workspaceId, detachedWin)
     const urlParam = `?detached=${encodeURIComponent(workspaceId)}`
     if (VITE_DEV_SERVER_URL) { detachedWin.loadURL(VITE_DEV_SERVER_URL + urlParam) }

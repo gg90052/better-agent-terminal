@@ -7,6 +7,8 @@ import { workspaceStore } from '../stores/workspace-store'
 import { settingsStore } from '../stores/settings-store'
 import '@xterm/xterm/css/xterm.css'
 
+const dlog = (...args: unknown[]) => window.electronAPI?.debug?.log(...args)
+
 interface TerminalPanelProps {
   terminalId: string
   isActive?: boolean
@@ -19,7 +21,12 @@ interface ContextMenu {
   hasSelection: boolean
 }
 
+let renderCount = 0
 export function TerminalPanel({ terminalId, isActive = true, terminalType }: TerminalPanelProps) {
+  renderCount++
+  if (renderCount <= 50 || renderCount % 50 === 0) {
+    dlog(`[render] TerminalPanel render #${renderCount} terminal=${terminalId} active=${isActive}`)
+  }
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -27,6 +34,7 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
   const [terminalReady, setTerminalReady] = useState(false)
   const hasBeenFocusedRef = useRef(false)
   const isActiveRef = useRef(isActive)
+  const doResizeRef = useRef<(() => void) | null>(null)
 
   // Keep isActiveRef in sync with isActive prop
   useEffect(() => {
@@ -88,36 +96,30 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
 
   // Handle terminal resize and focus when becoming active
   useEffect(() => {
-    if (isActive && terminalReady && fitAddonRef.current && terminalRef.current) {
+    if (isActive && terminalReady && terminalRef.current) {
       const terminal = terminalRef.current
-      const fitAddon = fitAddonRef.current
 
       // Use requestAnimationFrame to ensure DOM is fully rendered
       const rafId = requestAnimationFrame(() => {
-        if (!fitAddon || !terminal) return
+        if (!terminal) return
 
-        fitAddon.fit()
-        const { cols, rows } = terminal
-        window.electronAPI.pty.resize(terminalId, cols, rows)
+        dlog(`[resize] isActive effect → doResize terminal=${terminalId}`)
+        doResizeRef.current?.()
 
         // Force refresh terminal content to fix black screen after visibility change
-        // Call refresh after another frame to ensure layout is complete
         requestAnimationFrame(() => {
           terminal.refresh(0, terminal.rows - 1)
           terminal.focus()
 
           // Execute agent command on first focus for code-agent terminals
-          // Use delay to avoid auto-running all agents when app starts
           if (!hasBeenFocusedRef.current && terminalType === 'code-agent') {
             hasBeenFocusedRef.current = true
             const terminalInstance = workspaceStore.getState().terminals.find(t => t.id === terminalId)
             if (terminalInstance && !terminalInstance.agentCommandSent && !terminalInstance.hasUserInput) {
               const agentCommand = settingsStore.getAgentCommand()
               if (agentCommand) {
-                // Wait 3 seconds and verify terminal is still active before sending
                 setTimeout(() => {
                   const currentTerminal = workspaceStore.getState().terminals.find(t => t.id === terminalId)
-                  // Only send if terminal is still active (visible) and no user input yet
                   if (isActiveRef.current && currentTerminal && !currentTerminal.hasUserInput && !currentTerminal.agentCommandSent) {
                     window.electronAPI.pty.write(terminalId, agentCommand + '\r')
                     workspaceStore.markAgentCommandSent(terminalId)
@@ -135,19 +137,15 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
 
   // Add intersection observer to detect when terminal becomes visible
   useEffect(() => {
-    if (!containerRef.current || !fitAddonRef.current || !terminalRef.current) return
+    if (!containerRef.current || !terminalRef.current) return
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && isActive && fitAddonRef.current && terminalRef.current) {
-            // Terminal became visible, resize it
+          if (entry.isIntersecting && isActive && doResizeRef.current) {
+            dlog(`[resize] IntersectionObserver → visible, doResize terminal=${terminalId}`)
             setTimeout(() => {
-              if (fitAddonRef.current && terminalRef.current) {
-                fitAddonRef.current.fit()
-                const { cols, rows } = terminalRef.current
-                window.electronAPI.pty.resize(terminalId, cols, rows)
-              }
+              doResizeRef.current?.()
             }, 50)
           }
         })
@@ -215,10 +213,20 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
     terminal.loadAddon(unicode11Addon)
     terminal.unicode.activeVersion = '11'
 
-    // Delay fit to ensure terminal is fully initialized
-    requestAnimationFrame(() => {
+    // Deduplicated resize helper — avoids redundant pty.resize IPC calls
+    let lastSentCols = 0
+    let lastSentRows = 0
+    const doResize = () => {
       fitAddon.fit()
-    })
+      const { cols, rows } = terminal
+      if (cols !== lastSentCols || rows !== lastSentRows) {
+        lastSentCols = cols
+        lastSentRows = rows
+        dlog(`[resize] pty.resize cols=${cols} rows=${rows} terminal=${terminalId}`)
+        window.electronAPI.pty.resize(terminalId, cols, rows)
+      }
+    }
+    doResizeRef.current = doResize
 
     // Fix IME textarea position - force it to bottom left
     const fixImePosition = () => {
@@ -236,7 +244,12 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
     }
 
     // Use MutationObserver to keep fixing position when xterm.js changes it
+    let mutationCount = 0
     const observer = new MutationObserver(() => {
+      mutationCount++
+      if (mutationCount <= 20 || mutationCount % 100 === 0) {
+        dlog(`[render] MutationObserver #${mutationCount} terminal=${terminalId}`)
+      }
       fixImePosition()
     })
 
@@ -379,26 +392,37 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
       }
     })
 
-    // Handle resize — debounce with 150ms timeout to reduce DWM pressure during drag
+    // Handle resize — debounce with 500ms to avoid expensive xterm reflows during window drag
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
-    const resizeObserver = new ResizeObserver(() => {
+    let resizeObserverCount = 0
+    const resizeObserver = new ResizeObserver((entries) => {
+      resizeObserverCount++
+      const entry = entries[0]
+      const w = Math.round(entry.contentRect.width)
+      const h = Math.round(entry.contentRect.height)
+      dlog(`[render] ResizeObserver #${resizeObserverCount} terminal=${terminalId} active=${isActiveRef.current} ${w}x${h}`)
       if (resizeTimer) clearTimeout(resizeTimer)
       resizeTimer = setTimeout(() => {
         resizeTimer = null
-        fitAddon.fit()
-        const { cols, rows } = terminal
-        window.electronAPI.pty.resize(terminalId, cols, rows)
+        if (!isActiveRef.current) return
+        dlog(`[render] ResizeObserver debounce → doResize terminal=${terminalId}`)
+        const t0 = performance.now()
+        doResize()
+        const t1 = performance.now()
         terminal.refresh(0, terminal.rows - 1)
-      }, 150)
+        const t2 = performance.now()
+        dlog(`[render] doResize=${(t1-t0).toFixed(1)}ms refresh=${(t2-t1).toFixed(1)}ms terminal=${terminalId}`)
+      }, 200)
     })
     resizeObserver.observe(containerRef.current)
 
-    // Initial resize
-    setTimeout(() => {
-      fitAddon.fit()
-      const { cols, rows } = terminal
-      window.electronAPI.pty.resize(terminalId, cols, rows)
-    }, 100)
+    // Initial resize — only for active terminal, delayed to ensure DOM is ready
+    if (isActiveRef.current) {
+      setTimeout(() => {
+        dlog(`[resize] initial doResize terminal=${terminalId}`)
+        doResize()
+      }, 100)
+    }
 
     // Subscribe to settings changes for font and color updates
     const unsubscribeSettings = settingsStore.subscribe(() => {
@@ -413,9 +437,10 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
         cursor: newColors.cursor,
         cursorAccent: newColors.background
       }
-      fitAddon.fit()
-      const { cols, rows } = terminal
-      window.electronAPI.pty.resize(terminalId, cols, rows)
+      if (isActiveRef.current) {
+        dlog(`[resize] settings changed → doResize terminal=${terminalId}`)
+        doResize()
+      }
     })
 
     return () => {
@@ -425,6 +450,7 @@ export function TerminalPanel({ terminalId, isActive = true, terminalType }: Ter
       if (resizeTimer) clearTimeout(resizeTimer)
       resizeObserver.disconnect()
       observer.disconnect()
+      doResizeRef.current = null
       terminal.dispose()
     }
   }, [terminalId])

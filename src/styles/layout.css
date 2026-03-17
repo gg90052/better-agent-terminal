@@ -280,26 +280,22 @@
   inset: 0;
   display: flex;
   flex-direction: column;
+  contain: layout style;
 }
 
 .workspace-container.hidden {
-  visibility: hidden;
-  pointer-events: none;
-  z-index: 0;
+  display: none;
 }
 
 .workspace-container.active {
-  visibility: visible;
-  pointer-events: auto;
+  display: flex;
   z-index: 1;
 }
 
 .terminal-wrapper.hidden {
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 .terminal-wrapper.active {
-  visibility: visible;
-  pointer-events: auto;
+  display: flex;
 }

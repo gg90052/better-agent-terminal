@@ -6,6 +6,10 @@ const DEBUG_ENABLED = process.argv.includes('--debug') || process.env.BAT_DEBUG 
 let logFilePath: string | null = null
 let initialized = false
 
+// Buffered async writes — avoid blocking main process event loop
+let writeBuffer: string[] = []
+let flushScheduled = false
+
 function formatArgs(args: unknown[]): string {
   return args.map(a => {
     if (a instanceof Error) return `${a.message}\n${a.stack || ''}`
@@ -14,15 +18,24 @@ function formatArgs(args: unknown[]): string {
   }).join(' ')
 }
 
+function scheduleFlush() {
+  if (flushScheduled || writeBuffer.length === 0) return
+  flushScheduled = true
+  setImmediate(() => {
+    flushScheduled = false
+    if (!logFilePath || writeBuffer.length === 0) return
+    const batch = writeBuffer.join('')
+    writeBuffer = []
+    fs.appendFile(logFilePath, batch, () => { /* ignore errors */ })
+  })
+}
+
 function writeToFile(level: string, args: unknown[]) {
   if (!logFilePath) return
   const ts = new Date().toISOString()
   const line = `[${ts}] [${level}] ${formatArgs(args)}\n`
-  try {
-    fs.appendFileSync(logFilePath, line)
-  } catch {
-    // Silently ignore write failures
-  }
+  writeBuffer.push(line)
+  scheduleFlush()
 }
 
 /** Initialize logger with proper userData path. Call inside app.whenReady(). */
@@ -34,7 +47,7 @@ function init(userDataPath: string) {
   logFilePath = path.join(userDataPath, 'debug.log')
   const prevPath = path.join(userDataPath, 'debug.prev.log')
 
-  // Rotate: current → prev
+  // Rotate: current → prev (sync is fine here, only runs once at startup)
   try {
     if (fs.existsSync(logFilePath)) {
       try { fs.unlinkSync(prevPath) } catch { /* ok */ }
