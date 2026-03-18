@@ -4,6 +4,7 @@ export interface ClaudeMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   thinking?: string
+  parentToolUseId?: string
   timestamp: number
 }
 
@@ -16,6 +17,7 @@ export interface ClaudeToolCall {
   result?: string
   denyReason?: string
   denied?: boolean
+  parentToolUseId?: string
   timestamp: number
 }
 

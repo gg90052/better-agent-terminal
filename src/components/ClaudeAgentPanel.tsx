@@ -106,6 +106,12 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
   const [resumeLoading, setResumeLoading] = useState(false)
   const [showModelList, setShowModelList] = useState(false)
   const [contentModal, setContentModal] = useState<{ title: string; content: string } | null>(null)
+  // Subagent message storage (keyed by parent Task tool_use_id)
+  const subagentMessagesRef = useRef<Map<string, MessageItem[]>>(new Map())
+  const [subagentStreamingText, setSubagentStreamingText] = useState<Map<string, string>>(new Map())
+  const [subagentStreamingThinking, setSubagentStreamingThinking] = useState<Map<string, string>>(new Map())
+  const [taskModal, setTaskModal] = useState<{ taskId: string; label: string } | null>(null)
+  const [taskModalTick, setTaskModalTick] = useState(0)
   const [showPromptHistory, setShowPromptHistory] = useState(false)
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null)
   const [accountInfo, setAccountInfo] = useState<{ email?: string; organization?: string; subscriptionType?: string } | null>(null)
@@ -351,6 +357,18 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
           setSessionMeta(null)
           return
         }
+        // Route subagent messages to separate bucket
+        if (message.parentToolUseId) {
+          const bucket = subagentMessagesRef.current.get(message.parentToolUseId) || []
+          if (!bucket.some(m => m.id === message.id)) {
+            bucket.push(message)
+            subagentMessagesRef.current.set(message.parentToolUseId, bucket)
+            if (taskModal?.taskId === message.parentToolUseId) setTaskModalTick(t => t + 1)
+          }
+          setSubagentStreamingText(prev => { const n = new Map(prev); n.delete(message.parentToolUseId!); return n })
+          setSubagentStreamingThinking(prev => { const n = new Map(prev); n.delete(message.parentToolUseId!); return n })
+          return
+        }
         // Deduplicate by id; attach streaming thinking if backend didn't provide it
         setStreamingThinking(prevThinking => {
           const finalMsg = (!message.thinking && prevThinking && message.role === 'assistant')
@@ -369,6 +387,16 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
         if (sid !== sessionId) return
         workspaceStore.updateTerminalActivity(sessionId)
         const toolCall = tool as ClaudeToolCall
+        // Route subagent tool calls to separate bucket
+        if (toolCall.parentToolUseId) {
+          const bucket = subagentMessagesRef.current.get(toolCall.parentToolUseId) || []
+          if (!bucket.some(m => 'toolName' in m && m.id === toolCall.id)) {
+            bucket.push(toolCall)
+            subagentMessagesRef.current.set(toolCall.parentToolUseId, bucket)
+            if (taskModal?.taskId === toolCall.parentToolUseId) setTaskModalTick(t => t + 1)
+          }
+          return
+        }
         setMessages(prev => {
           if (prev.some(m => 'toolName' in m && m.id === toolCall.id)) return prev
           return [...prev, toolCall]
@@ -379,8 +407,26 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
         if (sid !== sessionId) return
         workspaceStore.updateTerminalActivity(sessionId)
         const { id, ...updates } = result as { id: string; status: string; result?: string }
+        // Check if tool exists in any subagent bucket
+        let foundInSubagent = false
+        for (const [parentId, bucket] of subagentMessagesRef.current.entries()) {
+          const idx = bucket.findIndex(m => 'toolName' in m && m.id === id)
+          if (idx !== -1) {
+            bucket[idx] = { ...bucket[idx], ...updates } as ClaudeToolCall
+            foundInSubagent = true
+            if (taskModal?.taskId === parentId) setTaskModalTick(t => t + 1)
+            break
+          }
+        }
+        if (foundInSubagent) return
+        // Update in main messages
         setMessages(prev => prev.map(m => {
           if ('toolName' in m && m.id === id) {
+            // When a Task tool completes, clear its subagent streaming state
+            if (m.toolName === 'Task') {
+              setSubagentStreamingText(p => { const n = new Map(p); n.delete(id); return n })
+              setSubagentStreamingThinking(p => { const n = new Map(p); n.delete(id); return n })
+            }
             return { ...m, ...updates } as ClaudeToolCall
           }
           return m
@@ -431,9 +477,27 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
       api.onStream((sid: string, data: unknown) => {
         if (sid !== sessionId) return
         workspaceStore.updateTerminalActivity(sessionId)
-        const d = data as { text?: string; thinking?: string }
-        if (d.text) setStreamingText(prev => prev + d.text)
-        if (d.thinking) setStreamingThinking(prev => prev + d.thinking)
+        const d = data as { text?: string; thinking?: string; parentToolUseId?: string }
+        if (d.parentToolUseId) {
+          // Route to per-subagent streaming state
+          if (d.text) {
+            setSubagentStreamingText(prev => {
+              const n = new Map(prev)
+              n.set(d.parentToolUseId!, (prev.get(d.parentToolUseId!) || '') + d.text)
+              return n
+            })
+          }
+          if (d.thinking) {
+            setSubagentStreamingThinking(prev => {
+              const n = new Map(prev)
+              n.set(d.parentToolUseId!, (prev.get(d.parentToolUseId!) || '') + d.thinking)
+              return n
+            })
+          }
+        } else {
+          if (d.text) setStreamingText(prev => prev + d.text)
+          if (d.thinking) setStreamingThinking(prev => prev + d.thinking)
+        }
       }),
 
       api.onStatus((sid: string, meta: unknown) => {
@@ -479,8 +543,21 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
         }
         console.log(`${tag} onHistory items=${(items as unknown[]).length}`)
         historyLoadedRef.current = true
-        // Replace messages with the full history batch and clear archive state
-        setMessages(items as MessageItem[])
+        // Partition history items: main timeline vs subagent buckets
+        const mainItems: MessageItem[] = []
+        const subagentBuckets = new Map<string, MessageItem[]>()
+        for (const item of items as MessageItem[]) {
+          const parentId = (item as { parentToolUseId?: string }).parentToolUseId
+          if (parentId) {
+            const bucket = subagentBuckets.get(parentId) || []
+            bucket.push(item)
+            subagentBuckets.set(parentId, bucket)
+          } else {
+            mainItems.push(item)
+          }
+        }
+        subagentMessagesRef.current = subagentBuckets
+        setMessages(mainItems)
         setLoadedArchive([])
         archivedCountRef.current = 0
         loadedFromArchiveRef.current = 0
@@ -1018,6 +1095,11 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
           setShowPromptHistory(false)
           return
         }
+        if (taskModal) {
+          e.preventDefault()
+          setTaskModal(null)
+          return
+        }
         if (contentModal) {
           e.preventDefault()
           setContentModal(null)
@@ -1095,7 +1177,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [isActive, isStreaming, handleStop, pendingPermission, permissionFocus, handlePermissionSelect, showResumeList, showModelList, contentModal, showFilePicker, filePickerPreview])
+  }, [isActive, isStreaming, handleStop, pendingPermission, permissionFocus, handlePermissionSelect, showResumeList, showModelList, taskModal, contentModal, showFilePicker, filePickerPreview])
 
   const handleAskUserSubmit = useCallback(() => {
     if (!pendingQuestion) return
@@ -1392,6 +1474,13 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
                 {item.status === 'running' && item.timestamp > 0 && (
                   <span className="claude-task-tag claude-task-elapsed">{formatElapsed(item.timestamp)}</span>
                 )}
+                <button className="claude-subagent-view-btn" onClick={(e) => {
+                  e.stopPropagation()
+                  const taskLabel = item.input.description
+                    ? String(item.input.description).slice(0, 60)
+                    : item.input.subagent_type ? String(item.input.subagent_type) : 'Task'
+                  setTaskModal({ taskId: item.id, label: taskLabel })
+                }}>View</button>
                 {item.timestamp > 0 && <span className="claude-tool-time" title={formatFullTimestamp(item.timestamp)}>{formatTimestamp(item.timestamp)}</span>}
               </div>
               {(model || maxTurns || runBg) && (
@@ -1853,10 +1942,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
               <div
                 key={task.id}
                 className="claude-active-task-item"
-                onClick={() => {
-                  const el = document.querySelector(`[data-tool-id="${task.id}"]`)
-                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                }}
+                onClick={() => setTaskModal({ taskId: task.id, label })}
               >
                 <span className="claude-active-task-dot" />
                 <span className="claude-active-task-label">{label}</span>
@@ -2342,6 +2428,63 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
           </div>
         </div>
       )}
+
+      {/* Subagent Modal */}
+      {taskModal && (() => {
+        const taskMsgs = subagentMessagesRef.current.get(taskModal.taskId) || []
+        const streamText = subagentStreamingText.get(taskModal.taskId) || ''
+        const streamThink = subagentStreamingThinking.get(taskModal.taskId) || ''
+        const parentTask = allMessages.find(m => isToolCall(m) && m.id === taskModal.taskId) as ClaudeToolCall | undefined
+        const isRunning = parentTask?.status === 'running'
+        // Force re-render dependency
+        void taskModalTick
+
+        return (
+          <div className="claude-plan-overlay" onClick={() => setTaskModal(null)}>
+            <div className="claude-plan-modal claude-subagent-modal" onClick={e => e.stopPropagation()}>
+              <div className="claude-plan-modal-header">
+                {isRunning && <span className="claude-active-task-dot" />}
+                <span className="claude-plan-modal-title">{taskModal.label}</span>
+                <span className="claude-subagent-meta">
+                  {taskMsgs.length} messages
+                  {parentTask && parentTask.timestamp > 0 ? ` · ${formatElapsed(parentTask.timestamp)}` : ''}
+                </span>
+                <button className="claude-plan-modal-close" onClick={() => setTaskModal(null)}>&times;</button>
+              </div>
+              <div className="claude-subagent-body">
+                <div className="claude-messages claude-timeline">
+                  {taskMsgs.map((item, i) => renderMessage(item, i))}
+                  {isRunning && streamThink && (
+                    <div className="tl-item">
+                      <div className="tl-dot dot-thinking" />
+                      <div className="tl-content">
+                        <pre className="claude-thinking-block">{streamThink}</pre>
+                      </div>
+                    </div>
+                  )}
+                  {isRunning && streamText && (
+                    <div className="tl-item">
+                      <div className="tl-dot dot-running" />
+                      <div className="tl-content">
+                        <div className="claude-assistant-text"><LinkedText text={streamText} /></div>
+                      </div>
+                    </div>
+                  )}
+                  {isRunning && !streamText && !streamThink && taskMsgs.length === 0 && (
+                    <div className="tl-item">
+                      <div className="tl-dot dot-thinking" />
+                      <div className="tl-content claude-thinking">
+                        <span className="claude-thinking-text">Thinking</span>
+                        <span className="claude-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Prompt History Modal */}
       {showPromptHistory && (() => {
