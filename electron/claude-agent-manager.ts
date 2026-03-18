@@ -500,6 +500,7 @@ export class ClaudeAgentManager {
                   role: 'assistant',
                   content: block.text,
                   thinking: thinkingText,
+                  parentToolUseId: message.parent_tool_use_id,
                   timestamp: Date.now(),
                 })
               }
@@ -511,6 +512,7 @@ export class ClaudeAgentManager {
                   toolName: toolBlock.name,
                   input: toolBlock.input || {},
                   status: 'running',
+                  parentToolUseId: message.parent_tool_use_id,
                   timestamp: Date.now(),
                 })
                 // Detect plan mode transitions and notify UI
@@ -1227,6 +1229,7 @@ export class ClaudeAgentManager {
               role: 'assistant' as const,
               content: cleanedAssistantText || '',
               ...(thinkingText ? { thinking: thinkingText } : {}),
+              ...(obj.parent_tool_use_id ? { parentToolUseId: obj.parent_tool_use_id } : {}),
               timestamp: ts,
             }
             items.push(item)
@@ -1241,6 +1244,7 @@ export class ClaudeAgentManager {
                 toolName: block.name,
                 input: block.input || {},
                 status: 'completed',
+                ...(obj.parent_tool_use_id ? { parentToolUseId: obj.parent_tool_use_id } : {}),
                 timestamp: ts,
               }
               toolIndexMap.set(block.id, items.length)
