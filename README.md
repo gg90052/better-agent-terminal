@@ -91,7 +91,14 @@ Manage multiple project terminals in one window, with a built-in Claude Code age
 
 ## Quick Start
 
-### Option 1: Download Release
+### Option 1: Homebrew (macOS)
+
+```bash
+brew tap tonyq-org/tap
+brew install --cask better-agent-terminal
+```
+
+### Option 2: Download Release
 
 Download from [Releases](https://github.com/tony1223/better-agent-terminal/releases/latest) for your platform:
 
