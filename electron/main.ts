@@ -27,8 +27,25 @@ if (process.platform === 'darwin') {
       '/opt/homebrew/bin',
       '/usr/local/bin',
       `${process.env.HOME}/.volta/bin`,
-    ].join(':')
-    process.env.PATH = `${extraPaths}:${process.env.PATH || ''}`
+    ]
+    // Resolve nvm: find the latest installed version's bin directory.
+    // NOTE: This intentionally duplicates the semver sort from node-resolver.ts
+    // because this code runs at the top level before any ES module imports,
+    // and importing node-resolver here would break the PATH fix ordering.
+    try {
+      const nvmDir = `${process.env.HOME}/.nvm/versions/node`
+      const versions = fsSync.readdirSync(nvmDir).filter((v: string) => v.startsWith('v'))
+      if (versions.length > 0) {
+        versions.sort((a: string, b: string) => {
+          const pa = a.replace(/^v/, '').split('.').map(Number)
+          const pb = b.replace(/^v/, '').split('.').map(Number)
+          for (let i = 0; i < 3; i++) { const d = (pa[i]||0) - (pb[i]||0); if (d !== 0) return d; }
+          return 0
+        })
+        extraPaths.push(`${nvmDir}/${versions[versions.length - 1]}/bin`)
+      }
+    } catch { /* nvm not installed */ }
+    process.env.PATH = `${extraPaths.join(':')}:${process.env.PATH || ''}`
   }
 }
 import { PtyManager } from './pty-manager'
