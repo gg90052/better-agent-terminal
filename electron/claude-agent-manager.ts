@@ -6,6 +6,7 @@ import * as pathModule from 'path'
 import type { ClaudeMessage, ClaudeToolCall, ClaudeSessionState } from '../src/types/claude-agent'
 import type { Query, PermissionMode, CanUseTool, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 import { logger } from './logger'
+import { getNodeExecutable } from './node-resolver'
 
 // App-level permission mode extends SDK's PermissionMode with bypassPlan
 // bypassPlan = plan mode (read-only exploration) + auto-approve all tool permissions
@@ -328,7 +329,8 @@ export class ClaudeAgentManager {
     try {
       const query = await getQuery()
       const claudeCodePath = resolveClaudeCodePath()
-      logger.log(`[Claude] runQuery: cwd=${session.cwd}, resumeId=${resumeId || 'none'}, claudeCodePath=${claudeCodePath || 'none'}`)
+      const nodeExecutable = getNodeExecutable()
+      logger.log(`[Claude] runQuery: cwd=${session.cwd}, resumeId=${resumeId || 'none'}, claudeCodePath=${claudeCodePath || 'none'}, nodeExecutable=${nodeExecutable}`)
       const canUseTool: CanUseTool = async (toolName, input, opts) => {
         // Check if this is an AskUserQuestion tool — always show UI
         if (toolName === 'AskUserQuestion') {
@@ -432,6 +434,7 @@ export class ClaudeAgentManager {
         ...(session.enable1MContext ? { betas: ['context-1m-2025-08-07'] } : {}),
         canUseTool,
         ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
+        ...(nodeExecutable !== 'node' ? { executable: nodeExecutable } : {}),
         stderr: (data: string) => {
           logger.error('[Claude Code stderr]', data)
           stderrOutput += data
