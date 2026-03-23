@@ -164,6 +164,18 @@ function renderMarkdown(text: string): string {
   // Blockquote
   html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>')
 
+  // Tables
+  html = html.replace(/^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)/gm, (_m, headerRow: string, _sepRow: string, bodyRows: string) => {
+    const parseRow = (row: string) => row.replace(/^\||\|$/g, '').split('|').map(c => c.trim())
+    const headers = parseRow(headerRow)
+    const headHtml = headers.map(h => `<th>${h}</th>`).join('')
+    const rows = bodyRows.trim().split('\n').map(row => {
+      const cells = parseRow(row)
+      return `<tr>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`
+    }).join('')
+    return `<table><thead><tr>${headHtml}</tr></thead><tbody>${rows}</tbody></table>`
+  })
+
   // Paragraphs: wrap remaining non-tag lines
   html = html.replace(/^(?!<[a-z/])(.*\S.*)$/gm, '<p>$1</p>')
 
