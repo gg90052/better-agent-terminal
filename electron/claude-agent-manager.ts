@@ -879,8 +879,11 @@ export class ClaudeAgentManager {
             num_turns?: number
             result?: string
             errors?: string[]
-            modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; outputTokens?: number }>
+            modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; maxOutputTokens?: number }>
           }
+
+          // Log raw result for debugging context window issues
+          logger.log(`[Claude result] raw: cost=${resultMsg.total_cost_usd}, usage=${JSON.stringify(resultMsg.usage)}, modelUsage=${JSON.stringify(resultMsg.modelUsage)}, turns=${resultMsg.num_turns}, duration=${resultMsg.duration_ms}`)
 
           session.state.totalCost = resultMsg.total_cost_usd
           session.state.totalTokens =
@@ -896,12 +899,15 @@ export class ClaudeAgentManager {
             let totalInput = 0
             let totalOutput = 0
             for (const [model, modelStats] of Object.entries(resultMsg.modelUsage)) {
-              const line = `[Claude ctx] modelUsage[${model}]: input=${modelStats.inputTokens}, output=${modelStats.outputTokens}, contextWindow=${modelStats.contextWindow}`
+              const stats = modelStats as { inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; contextWindow?: number }
+              const cacheRead = stats.cacheReadInputTokens || 0
+              const cacheCreate = stats.cacheCreationInputTokens || 0
+              const line = `[Claude ctx] modelUsage[${model}]: input=${stats.inputTokens}, output=${stats.outputTokens}, cacheRead=${cacheRead}, cacheCreate=${cacheCreate}, contextWindow=${stats.contextWindow}`
               logger.log(line)
-              totalInput += modelStats.inputTokens || 0
-              totalOutput += modelStats.outputTokens || 0
-              if (modelStats.contextWindow) {
-                session.metadata.contextWindow = modelStats.contextWindow
+              totalInput += (stats.inputTokens || 0) + cacheRead + cacheCreate
+              totalOutput += stats.outputTokens || 0
+              if (stats.contextWindow) {
+                session.metadata.contextWindow = stats.contextWindow
               }
             }
             const summary = `[Claude ctx] prev: input=${session.metadata.inputTokens}, output=${session.metadata.outputTokens} | new: input=${totalInput}, output=${totalOutput} | cost=${resultMsg.total_cost_usd}`
@@ -909,11 +915,14 @@ export class ClaudeAgentManager {
             session.metadata.inputTokens = totalInput
             session.metadata.outputTokens = totalOutput
           } else if (resultMsg.usage) {
-            const line = `[Claude ctx] usage fallback: input=${resultMsg.usage.input_tokens}, output=${resultMsg.usage.output_tokens} | prev: input=${session.metadata.inputTokens}, output=${session.metadata.outputTokens}`
+            const usageFull = resultMsg.usage as { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }
+            const cacheRead = usageFull.cache_read_input_tokens || 0
+            const cacheCreate = usageFull.cache_creation_input_tokens || 0
+            const totalInput = (usageFull.input_tokens || 0) + cacheRead + cacheCreate
+            const line = `[Claude ctx] usage fallback: input=${usageFull.input_tokens}, output=${usageFull.output_tokens}, cacheRead=${cacheRead}, cacheCreate=${cacheCreate} | prev: input=${session.metadata.inputTokens}, output=${session.metadata.outputTokens}`
             logger.log(line)
-            // Fallback: usage is session-cumulative (like total_cost_usd), assign directly
-            session.metadata.inputTokens = resultMsg.usage.input_tokens || 0
-            session.metadata.outputTokens = resultMsg.usage.output_tokens || 0
+            session.metadata.inputTokens = totalInput
+            session.metadata.outputTokens = usageFull.output_tokens || 0
           }
 
           this.send('claude:status', sessionId, { ...session.metadata })
