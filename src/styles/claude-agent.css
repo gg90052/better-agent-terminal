@@ -576,7 +576,6 @@
 /* Elapsed time on running tasks */
 .claude-task-elapsed {
   color: var(--claude-accent) !important;
-  animation: claude-blink 2s step-end infinite;
 }
 
 .claude-task-progress {
