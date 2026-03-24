@@ -582,12 +582,6 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
             contextWindow: m.contextWindow,
           })
         }
-        // Update usage from SDK rate_limits if included
-        const rateLimits = (meta as Record<string, unknown>).rateLimits as { fiveHour: number | null; sevenDay: number | null; fiveHourReset: string | null; sevenDayReset: string | null } | undefined
-        if (rateLimits && (rateLimits.fiveHour != null || rateLimits.sevenDay != null)) {
-          workspaceStore.updateUsageFromSDK(rateLimits)
-          setClaudeUsage(rateLimits)
-        }
         // Sync UI with backend's current permission mode
         if (m.permissionMode) {
           setPermissionMode(m.permissionMode)

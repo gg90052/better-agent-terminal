@@ -891,10 +891,6 @@ export class ClaudeAgentManager {
             result?: string
             errors?: string[]
             modelUsage?: Record<string, { contextWindow?: number; inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; maxOutputTokens?: number }>
-            rate_limits?: {
-              five_hour?: { utilization?: number; resets_at?: string }
-              seven_day?: { utilization?: number; resets_at?: string }
-            }
           }
 
           // Log raw result for debugging context window issues
@@ -943,18 +939,7 @@ export class ClaudeAgentManager {
             session.metadata.outputTokens = usageFull.output_tokens || 0
           }
 
-          // Include rate_limits from SDK result if available
-          const statusPayload: Record<string, unknown> = { ...session.metadata }
-          if (resultMsg.rate_limits) {
-            logger.log(`[Claude rate_limits] 5h=${resultMsg.rate_limits.five_hour?.utilization}% reset=${resultMsg.rate_limits.five_hour?.resets_at} 7d=${resultMsg.rate_limits.seven_day?.utilization}% reset=${resultMsg.rate_limits.seven_day?.resets_at}`)
-            statusPayload.rateLimits = {
-              fiveHour: resultMsg.rate_limits.five_hour?.utilization ?? null,
-              sevenDay: resultMsg.rate_limits.seven_day?.utilization ?? null,
-              fiveHourReset: resultMsg.rate_limits.five_hour?.resets_at ?? null,
-              sevenDayReset: resultMsg.rate_limits.seven_day?.resets_at ?? null,
-            }
-          }
-          this.send('claude:status', sessionId, statusPayload)
+          this.send('claude:status', sessionId, { ...session.metadata })
 
           this.send('claude:result', sessionId, {
             subtype: resultMsg.subtype,
