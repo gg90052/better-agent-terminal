@@ -250,14 +250,17 @@ export const TerminalPanel = memo(function TerminalPanel({ terminalId, isActive 
         let match
         const links = []
         while ((match = fileUrlRegex.exec(text)) !== null) {
+          const url = match[0]
+          const startX = match.index + 1
+          const endX = match.index + url.length
           links.push({
-            text: match[0],
+            text: url,
             range: {
-              start: { x: match.index + 1, y: bufferLineNumber },
-              end: { x: match.index + match[0].length, y: bufferLineNumber }
+              start: { x: startX, y: bufferLineNumber },
+              end: { x: endX, y: bufferLineNumber }
             },
             activate() {
-              window.electronAPI.shell.openExternal(match![0])
+              window.electronAPI.shell.openExternal(url)
             }
           })
         }
