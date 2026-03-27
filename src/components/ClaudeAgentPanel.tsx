@@ -85,6 +85,10 @@ interface ClaudeAgentPanelProps {
   cwd: string
   isActive: boolean
   workspaceId?: string
+  showUserMsg?: boolean
+  showAssistantMsg?: boolean
+  showToolMsg?: boolean
+  showThinkingMsg?: boolean
 }
 
 interface AttachedImage {
@@ -97,7 +101,7 @@ type MessageItem = ClaudeMessage | ClaudeToolCall
 // Track sessions that have been started to prevent duplicate calls across StrictMode remounts
 const startedSessions = new Set<string>()
 
-export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Readonly<ClaudeAgentPanelProps>) {
+export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUserMsg = true, showAssistantMsg = true, showToolMsg = true, showThinkingMsg = true }: Readonly<ClaudeAgentPanelProps>) {
   const { t } = useTranslation()
   const [messages, setMessages] = useState<MessageItem[]>([])
   const inputValueRef = useRef('')
@@ -1615,6 +1619,12 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
   }
 
   const renderMessage = (item: MessageItem, index: number) => {
+    if (isToolCall(item) && !showToolMsg) return null
+    if (!isToolCall(item)) {
+      const msg = item as ClaudeMessage
+      if (msg.role === 'user' && !showUserMsg) return null
+      if (msg.role === 'assistant' && !showAssistantMsg) return null
+    }
     if (isToolCall(item)) {
       // TodoWrite: render as a visual checklist
       if (item.toolName === 'TodoWrite') {
@@ -2149,12 +2159,13 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
         </div>
       )
     }
-    // assistant
+    // assistant — if only thinking and thinking is hidden, skip entirely
+    if (!showThinkingMsg && !msg.content) return null
     return (
       <div key={msg.id || index} className="tl-item">
         <div className="tl-dot dot-assistant" />
         <div className="tl-content claude-message-assistant">
-          {msg.thinking && (() => {
+          {msg.thinking && showThinkingMsg && (() => {
             const isExpanded = expandedTools.has(msg.id) || (autoExpandThinking && !expandedTools.has(`${msg.id}-collapsed`))
             return (
               <div className="claude-thinking-block">
@@ -2269,7 +2280,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
           ) : null
           return <Fragment key={item.id || `msg-${i}`}>{divider}{renderMessage(item, i)}</Fragment>
         })}
-        {isStreaming && !streamingText && !streamingThinking && (
+        {isStreaming && !streamingText && !streamingThinking && showThinkingMsg && (
           <div className="tl-item">
             <div className="tl-dot dot-thinking" />
             <div className="tl-content claude-thinking">
@@ -2278,7 +2289,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
             </div>
           </div>
         )}
-        {streamingThinking && (
+        {streamingThinking && showThinkingMsg && (
           <div className="tl-item">
             <div className="tl-dot dot-thinking" />
             <div className="tl-content claude-thinking-block">
