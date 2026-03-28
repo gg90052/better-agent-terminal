@@ -15,10 +15,24 @@ import DOMPurify from 'dompurify'
 // Both use the same settings (gfm, breaks, highlight.js, link interception),
 // so sharing is intentional and avoids configuration drift.
 function renderChatMarkdown(text: string): string {
-  const rawHtml = marked.parse(text) as string
+  // Pre-process: convert bare file:// URLs to markdown links so marked renders them as <a>
+  // marked only auto-links http/https by default
+  // Skip URLs inside code blocks/inline code and existing markdown links
+  const processed = text.replace(
+    /(`{1,3}[\s\S]*?`{1,3})|(file:\/\/\/[^\s<>)\]`'"]+)/g,
+    (match, codeBlock, fileUrl, offset, str) => {
+      if (codeBlock) return match  // preserve code blocks as-is
+      if (!fileUrl) return match
+      const before = str.slice(Math.max(0, offset - 2), offset)
+      if (before === '](' || before.endsWith('(')) return match
+      return `[${fileUrl}](${fileUrl})`
+    }
+  )
+  const rawHtml = marked.parse(processed) as string
   return DOMPurify.sanitize(rawHtml, {
     ADD_TAGS: ['input'],
     ADD_ATTR: ['checked', 'disabled', 'type', 'data-external-link'],
+    ALLOWED_URI_REGEXP: /^(?:https?|mailto|tel|file):/i,
   })
 }
 
@@ -2202,8 +2216,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId }: Read
               dangerouslySetInnerHTML={{ __html: renderChatMarkdown(msg.content) }}
               onClick={(e) => {
                 const target = e.target as HTMLElement
-                const link = target.closest('a[data-external-link]') as HTMLAnchorElement | null
-                if (link) {
+                const link = target.closest('a') as HTMLAnchorElement | null
+                if (link?.href) {
                   e.preventDefault()
                   window.electronAPI.shell.openExternal(link.href)
                 }

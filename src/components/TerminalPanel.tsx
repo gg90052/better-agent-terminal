@@ -240,6 +240,34 @@ export const TerminalPanel = memo(function TerminalPanel({ terminalId, isActive 
     terminal.loadAddon(webLinksAddon)
     terminal.open(containerRef.current)
 
+    // Register file:// URL link provider (WebLinksAddon only handles http/https)
+    terminal.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const line = terminal.buffer.active.getLine(bufferLineNumber - 1)
+        if (!line) { callback(undefined); return }
+        const text = line.translateToString()
+        const fileUrlRegex = /file:\/\/\/[^\s'"\])}>,;`]+/g
+        let match
+        const links = []
+        while ((match = fileUrlRegex.exec(text)) !== null) {
+          const url = match[0]
+          const startX = match.index + 1
+          const endX = match.index + url.length
+          links.push({
+            text: url,
+            range: {
+              start: { x: startX, y: bufferLineNumber },
+              end: { x: endX, y: bufferLineNumber }
+            },
+            activate() {
+              window.electronAPI.shell.openExternal(url)
+            }
+          })
+        }
+        callback(links.length > 0 ? links : undefined)
+      }
+    })
+
     // Load unicode11 addon after terminal is open
     terminal.loadAddon(unicode11Addon)
     terminal.unicode.activeVersion = '11'
