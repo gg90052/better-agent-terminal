@@ -351,6 +351,22 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Ensure current window entry has profileId (backfill for migrated entries)
+  if (currentWindowId) {
+    const entry = await windowRegistry.getEntry(currentWindowId)
+    if (entry && !entry.profileId) {
+      try {
+        const profileIndexPath = path.join(app.getPath('userData'), 'profiles', 'index.json')
+        const profileIndex = JSON.parse(await fs.readFile(profileIndexPath, 'utf-8'))
+        if (profileIndex.activeProfileId) {
+          entry.profileId = profileIndex.activeProfileId
+          await windowRegistry.saveEntry(entry)
+          logger.log(`[startup] backfilled profileId=${entry.profileId} for window ${currentWindowId}`)
+        }
+      } catch { /* no profile index */ }
+    }
+  }
+
   const t1 = Date.now()
   buildMenu()
   logger.log(`[startup] buildMenu: ${Date.now() - t1}ms`)

@@ -108,9 +108,20 @@ export class WindowRegistry {
       }
     } catch { /* no existing workspaces */ }
 
+    // Read active profile ID to link the migrated window entry
+    let activeProfileId: string | undefined
+    try {
+      const profileIndexPath = path.join(app.getPath('userData'), 'profiles', 'index.json')
+      const profileIndex = JSON.parse(await fs.readFile(profileIndexPath, 'utf-8'))
+      activeProfileId = profileIndex.activeProfileId || 'default'
+    } catch {
+      activeProfileId = 'default'
+    }
+
     // Create a single window entry from existing data
     const entry: WindowEntry = {
       id: generateId(),
+      profileId: activeProfileId,
       workspaces: workspacesData.workspaces,
       activeWorkspaceId: workspacesData.activeWorkspaceId,
       activeGroup: workspacesData.activeGroup,
