@@ -31,3 +31,13 @@
 - Our status line implementation is superior to external alternatives (e.g., ccstatusline). Do not replace it.
 - 13 configurable items with custom colors, zone alignment, and template-based config.
 - Usage polling: Chrome session key (primary, lenient rate limits) → OAuth fallback (strict rate limits).
+
+## Release
+
+- **正式版**: `release new tag version` → 基於最新 tag 遞增 patch 版號，建立 tag 並 push
+  - 例：目前 `v2.1.3` → 建立 `v2.1.4` tag
+- **預覽版**: `release new pre tag version` → 基於最新 tag 遞增 patch 版號，加 `-pre.1` 後綴
+  - 例：目前 `v2.1.3` → 建立 `v2.1.4-pre.1`
+  - 若已有 `v2.1.4-pre.1` → 建立 `v2.1.4-pre.2`
+- Tag 含 `-pre` 時 GitHub Release 自動標為 Pre-release，不更新 Homebrew tap
+- Tag 不含 `-pre` 時為正式版，更新 Homebrew tap
