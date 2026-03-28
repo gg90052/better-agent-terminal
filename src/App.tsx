@@ -248,10 +248,12 @@ export default function App() {
             const localProfile = result.profiles.find(p => p.type !== 'remote')
             if (localProfile) {
               await window.electronAPI.profile.load(localProfile.id)
-              setActiveProfileName(localProfile.name)
+              const winIdx = await window.electronAPI.app.getWindowIndex()
+              setActiveProfileName(`${localProfile.name}:${winIdx}`)
             }
           } else {
-            setActiveProfileName(active.name)
+            const winIdx = await window.electronAPI.app.getWindowIndex()
+            setActiveProfileName(`${active.name}:${winIdx}`)
             setIsRemoteConnected(true)
           }
         } else if (active?.type === 'remote') {
@@ -264,7 +266,8 @@ export default function App() {
           const localProfile = result.profiles.find(p => p.type !== 'remote')
           if (localProfile) {
             await window.electronAPI.profile.load(localProfile.id)
-            setActiveProfileName(localProfile.name)
+            const winIdx = await window.electronAPI.app.getWindowIndex()
+            setActiveProfileName(`${localProfile.name}:${winIdx}`)
           }
         } else if (active) {
           // For local profiles opened in a new window, load the profile snapshot
@@ -272,11 +275,13 @@ export default function App() {
           if (launchProfileId) {
             await window.electronAPI.profile.load(active.id)
           }
-          setActiveProfileName(active.name)
+          const winIdx = await window.electronAPI.app.getWindowIndex()
+          setActiveProfileName(`${active.name}:${winIdx}`)
         } else if (result.profiles.length > 0) {
           // Fallback: activeProfileId didn't match any profile — use first local profile
           const fallback = result.profiles.find(p => p.type !== 'remote') || result.profiles[0]
-          setActiveProfileName(fallback.name)
+          const winIdx = await window.electronAPI.app.getWindowIndex()
+          setActiveProfileName(`${fallback.name}:${winIdx}`)
         }
 
         const tLoad = performance.now()

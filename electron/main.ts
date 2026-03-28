@@ -1385,6 +1385,16 @@ function registerLocalHandlers() {
     const entry = await windowRegistry.getEntry(windowId)
     return entry?.profileId ?? null
   })
+  // Get this window's index within its profile (1-based)
+  ipcMain.handle('app:get-window-index', async (event) => {
+    const windowId = getWindowIdByWebContents(event.sender)
+    if (!windowId) return 1
+    const entries = await windowRegistry.readAll()
+    const entry = entries.find(e => e.id === windowId)
+    if (!entry?.profileId) return 1
+    const sameProfile = entries.filter(e => e.profileId === entry.profileId)
+    return sameProfile.findIndex(e => e.id === windowId) + 1
+  })
 
   // Dock badge count (macOS/Linux)
   ipcMain.handle('app:set-dock-badge', (_event, count: number) => {
