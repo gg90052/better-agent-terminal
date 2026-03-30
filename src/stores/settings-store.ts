@@ -26,7 +26,6 @@ const defaultSettings: AppSettings = {
   defaultTerminalCount: 1,
   createDefaultAgentTerminal: true,
   allowBypassPermissions: true,
-  enable1MContext: true
 }
 
 class SettingsStore {
@@ -186,11 +185,6 @@ class SettingsStore {
     this.save()
   }
 
-  setEnable1MContext(enable: boolean): void {
-    this.settings = { ...this.settings, enable1MContext: enable }
-    this.notify()
-    this.save()
-  }
 
   setDefaultModel(model: string): void {
     this.settings = { ...this.settings, defaultModel: model || undefined }

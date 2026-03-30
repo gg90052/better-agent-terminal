@@ -138,7 +138,6 @@ interface SessionInstance {
   pendingAskUser: Map<string, PendingRequest>
   permissionMode: AppPermissionMode
   effort: 'low' | 'medium' | 'high' | 'max'
-  enable1MContext: boolean
   model?: string
   messageQueue: QueuedMessage[]
   currentPrompt?: string  // Track the currently running prompt for abort context
@@ -315,7 +314,6 @@ export class ClaudeAgentManager {
         pendingAskUser: new Map(),
         permissionMode: options.permissionMode || 'default',
         effort: options.effort || 'medium',
-        enable1MContext: options.model?.endsWith('[1m]') ?? false,
         model: options.model,
         messageQueue: [],
         activeTasks: new Map(),
@@ -538,7 +536,7 @@ export class ClaudeAgentManager {
         toolConfig: { askUserQuestion: { previewFormat: 'html' } },
         agentProgressSummaries: true,
         ...(session.model ? { model: stripContextSuffix(session.model) } : {}),
-        ...(session.enable1MContext ? { betas: ['context-1m-2025-08-07'] } : {}),
+        ...(session.model?.endsWith('[1m]') ? { betas: ['context-1m-2025-08-07'] } : {}),
         ...(installedPlugins.length > 0 ? { plugins: installedPlugins } : {}),
         canUseTool,
         ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
@@ -1183,22 +1181,19 @@ export class ClaudeAgentManager {
     const session = this.sessions.get(sessionId)
     if (!session || !model) return false
 
-    const has1M = model.endsWith('[1m]')
     const baseModel = stripContextSuffix(model)
 
     // Persist the full model value (including [1m] suffix) for UI state
     session.model = model
     session.metadata.model = model
-    // Auto-set 1M context based on suffix
-    session.enable1MContext = has1M
 
     if (!session.queryInstance) {
-      logger.log(`[setModel] stored model ${model} (1M=${has1M}) for session ${sessionId.slice(0, 8)} (no active query)`)
+      logger.log(`[setModel] stored model ${model} for session ${sessionId.slice(0, 8)} (no active query)`)
       return true
     }
 
     try {
-      logger.log(`[setModel] setting model to ${baseModel} (1M=${has1M}) for session ${sessionId.slice(0, 8)}`)
+      logger.log(`[setModel] setting model to ${baseModel} for session ${sessionId.slice(0, 8)}`)
       await session.queryInstance.setModel(baseModel)
       this.send('claude:status', sessionId, { ...session.metadata })
       logger.log(`[setModel] success: ${baseModel}`)
@@ -1213,13 +1208,6 @@ export class ClaudeAgentManager {
     const session = this.sessions.get(sessionId)
     if (!session) return false
     session.effort = effort
-    return true
-  }
-
-  set1MContext(sessionId: string, enable: boolean): boolean {
-    const session = this.sessions.get(sessionId)
-    if (!session) return false
-    session.enable1MContext = enable
     return true
   }
 
@@ -1604,7 +1592,6 @@ export class ClaudeAgentManager {
     const cwd = session.cwd
     const permissionMode = session.permissionMode
     const effort = session.effort
-    const enable1MContext = session.enable1MContext
     const model = session.model
 
     // Tear down old session completely
@@ -1620,7 +1607,6 @@ export class ClaudeAgentManager {
       const newSession = this.sessions.get(sessionId)
       if (newSession) {
         newSession.effort = effort
-        newSession.enable1MContext = enable1MContext
         newSession.model = model
       }
     }

@@ -35,8 +35,6 @@
     "autoRunAgentCommandHint": "创建 Agent 终端时自动执行 Agent 命令（例如 `claude`）。",
     "allowBypassPermissions": "允许跳过权限确认",
     "allowBypassPermissionsHint": "启用后，在 Claude Agent 面板中切换至 bypassPermissions 模式时不会显示确认对话框。请谨慎使用。",
-    "enable1MContext": "启用 1M token 上下文窗口",
-    "enable1MContextHint": "对支持的模型（Opus 4.6、Sonnet 4.6）使用扩展的 1M token 上下文窗口。停用则使用默认的 200K 上下文。",
     "defaultModel": "默认模型",
     "defaultModelPlaceholder": "例如 claude-sonnet-4-5-20250514",
     "defaultModelHint": "新 Agent 对话使用的模型 ID。留空则使用 SDK 默认。",

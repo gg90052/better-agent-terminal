@@ -133,8 +133,6 @@ const electronAPI = {
       ipcRenderer.invoke('claude:set-model', sessionId, model),
     setEffort: (sessionId: string, effort: string) =>
       ipcRenderer.invoke('claude:set-effort', sessionId, effort),
-    set1MContext: (sessionId: string, enable: boolean) =>
-      ipcRenderer.invoke('claude:set-1m-context', sessionId, enable),
     resetSession: (sessionId: string) =>
       ipcRenderer.invoke('claude:reset-session', sessionId),
     getSupportedModels: (sessionId: string) =>

@@ -155,7 +155,6 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
   const [permissionMode, setPermissionMode] = useState<string>('bypassPermissions')
   const [currentModel, setCurrentModel] = useState<string>('')
   const [effortLevel, setEffortLevel] = useState<string>('medium')
-  const [enable1MContext, setEnable1MContext] = useState(false)
   const [claudeUsage, setClaudeUsage] = useState(workspaceStore.claudeUsage)
   const [usageAccount, setUsageAccount] = useState(workspaceStore.usageAccount)
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
@@ -1256,13 +1255,6 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
     setEffortLevel(next)
     await window.electronAPI.claude.setEffort(sessionId, next)
   }, [sessionId])
-
-  const handle1MContextToggle = useCallback(async () => {
-    const next = !enable1MContext
-    setEnable1MContext(next)
-    settingsStore.setEnable1MContext(next)
-    await window.electronAPI.claude.set1MContext(sessionId, next)
-  }, [sessionId, enable1MContext])
 
   const showDontAskAgain = (pendingPermission?.suggestions?.length ?? 0) > 0
     || pendingPermission?.toolName === 'ExitPlanMode'
