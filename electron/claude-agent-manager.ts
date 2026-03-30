@@ -22,10 +22,6 @@ const BAT_BUILTIN_MODELS: Array<{ value: string; displayName: string; descriptio
   { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'claude-haiku-4-5 · fast & lightweight' },
 ]
 
-// Strip [1m] suffix from a model value to get the real API model ID
-function stripContextSuffix(model: string): string {
-  return model.replace(/\[1m\]$/, '')
-}
 
 // Lazy import the SDK (it's an ES module)
 let queryFn: typeof import('@anthropic-ai/claude-agent-sdk').query | null = null
@@ -535,8 +531,7 @@ export class ClaudeAgentManager {
         effort: session.effort,
         toolConfig: { askUserQuestion: { previewFormat: 'html' } },
         agentProgressSummaries: true,
-        ...(session.model ? { model: stripContextSuffix(session.model) } : {}),
-        ...(session.model?.endsWith('[1m]') ? { betas: ['context-1m-2025-08-07'] } : {}),
+        ...(session.model ? { model: session.model } : {}),
         ...(installedPlugins.length > 0 ? { plugins: installedPlugins } : {}),
         canUseTool,
         ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
@@ -932,7 +927,8 @@ export class ClaudeAgentManager {
           }
 
           // Log raw result for debugging context window issues
-          logger.log(`[Claude result] raw: cost=${resultMsg.total_cost_usd}, usage=${JSON.stringify(resultMsg.usage)}, modelUsage=${JSON.stringify(resultMsg.modelUsage)}, turns=${resultMsg.num_turns}, duration=${resultMsg.duration_ms}`)
+          logger.log(`[Claude result] raw: subtype=${resultMsg.subtype}, cost=${resultMsg.total_cost_usd}, turns=${resultMsg.num_turns}, duration=${resultMsg.duration_ms}, result=${resultMsg.result ? JSON.stringify(resultMsg.result.slice(0, 300)) : 'null'}`)
+          logger.log(`[Claude result] usage=${JSON.stringify(resultMsg.usage)}, modelUsage=${JSON.stringify(resultMsg.modelUsage)}`)
 
           session.state.totalCost = resultMsg.total_cost_usd
           session.state.totalTokens =
@@ -1181,9 +1177,7 @@ export class ClaudeAgentManager {
     const session = this.sessions.get(sessionId)
     if (!session || !model) return false
 
-    const baseModel = stripContextSuffix(model)
-
-    // Persist the full model value (including [1m] suffix) for UI state
+    // Persist the full model value (including [1m] suffix) — SDK handles it natively
     session.model = model
     session.metadata.model = model
 
@@ -1193,10 +1187,10 @@ export class ClaudeAgentManager {
     }
 
     try {
-      logger.log(`[setModel] setting model to ${baseModel} for session ${sessionId.slice(0, 8)}`)
-      await session.queryInstance.setModel(baseModel)
+      logger.log(`[setModel] setting model to ${model} for session ${sessionId.slice(0, 8)}`)
+      await session.queryInstance.setModel(model)
       this.send('claude:status', sessionId, { ...session.metadata })
-      logger.log(`[setModel] success: ${baseModel}`)
+      logger.log(`[setModel] success: ${model}`)
       return true
     } catch (e) {
       logger.warn(`[setModel] SDK call failed (model stored for next query):`, e)
