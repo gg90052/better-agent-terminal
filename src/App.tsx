@@ -235,13 +235,6 @@ export default function App() {
         return
       }
 
-      // Cmd+Left / Cmd+Right: Cycle workspace tabs (terminal/files/git)
-      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.shiftKey) {
-        e.preventDefault()
-        window.dispatchEvent(new CustomEvent('workspace-cycle-tab', { detail: { direction: e.key === 'ArrowRight' ? 1 : -1 } }))
-        return
-      }
-
       // Cmd+Up / Cmd+Down: Switch workspaces
       if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey) {
         e.preventDefault()
