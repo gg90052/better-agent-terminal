@@ -2668,8 +2668,10 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
       )}
 
       {/* Input area — hidden when permission card, ask-user card, or resume/model list is visible */}
-      {!pendingPermission && !pendingQuestion && !showResumeList && !showModelList && (
-      <div className={`claude-input-area${isDragOver ? ' drag-over' : ''}`}>
+      <div
+        className={`claude-input-area${isDragOver ? ' drag-over' : ''}`}
+        style={pendingPermission || pendingQuestion || showResumeList || showModelList ? { display: 'none' } : undefined}
+      >
         {/* Prompt suggestion chip */}
         {promptSuggestion && !isStreaming && (
           <div className="claude-prompt-suggestion" onClick={() => {
@@ -2820,7 +2822,6 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
           </div>
         </div>
       </div>
-      )}
 
       {/* Plan Modal */}
       {contentModal && (
