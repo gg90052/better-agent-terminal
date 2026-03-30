@@ -796,11 +796,19 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
     }
   }, [isActive, sessionId])
 
-  // Fetch supported models, account info, and slash commands once session metadata arrives
+  // Fetch supported models on demand when model list is opened (no session required)
+  useEffect(() => {
+    if (showModelList && availableModels.length === 0) {
+      window.electronAPI.claude.getSupportedModels(sessionId).then((models: ModelInfo[]) => {
+        if (models && models.length > 0) setAvailableModels(models)
+      }).catch(() => {})
+    }
+  }, [showModelList])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch account info and slash commands once session metadata arrives
   useEffect(() => {
     if (sessionMeta?.sdkSessionId && availableModels.length === 0) {
       window.electronAPI.claude.getSupportedModels(sessionId).then((models: ModelInfo[]) => {
-        console.log('[getSupportedModels] raw response:', JSON.stringify(models, null, 2))
         if (models && models.length > 0) {
           setAvailableModels(models)
         }
