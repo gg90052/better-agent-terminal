@@ -1024,8 +1024,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
       return
     }
 
-    // Intercept /new command — reset session (clear conversation, fresh start)
-    if (!isStreaming && trimmed === '/new') {
+    // Intercept /new or /clear command — reset session (clear conversation, fresh start)
+    if (!isStreaming && (trimmed === '/new' || trimmed === '/clear')) {
       clearInput()
       setMessages([])
       setStreamingText('')
@@ -1144,6 +1144,7 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
     // Include our custom commands plus SDK commands
     const builtIn: SlashCommandInfo[] = [
       { name: 'new', description: 'Reset session (clear conversation)', argumentHint: '' },
+      { name: 'clear', description: 'Reset session (same as /new)', argumentHint: '' },
       { name: 'resume', description: 'Resume a previous session', argumentHint: '' },
       { name: 'model', description: 'Select model', argumentHint: '' },
     ]
