@@ -147,6 +147,16 @@ const electronAPI = {
       ipcRenderer.invoke('claude:scan-skills', cwd) as Promise<{ name: string; description: string; scope: 'project' | 'global' }[]>,
     getSessionMeta: (sessionId: string) =>
       ipcRenderer.invoke('claude:get-session-meta', sessionId) as Promise<Record<string, unknown> | null>,
+    getContextUsage: (sessionId: string) =>
+      ipcRenderer.invoke('claude:get-context-usage', sessionId) as Promise<{
+        categories: { name: string; tokens: number; color: string; isDeferred?: boolean }[]
+        totalTokens: number
+        maxTokens: number
+        percentage: number
+        model: string
+        memoryFiles?: { path: string; type: string; tokens: number }[]
+        mcpTools?: { name: string; serverName: string; tokens: number; isLoaded?: boolean }[]
+      } | null>,
     getUsage: () =>
       ipcRenderer.invoke('claude:get-usage') as Promise<{ fiveHour: number | null; sevenDay: number | null; fiveHourReset: string | null; sevenDayReset: string | null } | null>,
     getUsageAccount: () =>

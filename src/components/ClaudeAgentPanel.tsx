@@ -193,6 +193,15 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
   const [showPromptHistory, setShowPromptHistory] = useState(false)
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null)
   const [statuslineConfig, setStatuslineConfig] = useState(settingsStore.getStatuslineItems())
+  const [contextUsagePopup, setContextUsagePopup] = useState<{
+    categories: { name: string; tokens: number; color: string; isDeferred?: boolean }[]
+    totalTokens: number
+    maxTokens: number
+    percentage: number
+    model: string
+    memoryFiles?: { path: string; type: string; tokens: number }[]
+    mcpTools?: { name: string; serverName: string; tokens: number; isLoaded?: boolean }[]
+  } | null>(null)
   const [accountInfo, setAccountInfo] = useState<{ email?: string; organization?: string; subscriptionType?: string } | null>(null)
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([])
   const [showSlashMenu, setShowSlashMenu] = useState(false)
@@ -2976,6 +2985,63 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
         </div>
       )}
 
+      {/* Context Usage Popup */}
+      {contextUsagePopup && (
+        <div className="claude-plan-overlay" onClick={() => setContextUsagePopup(null)}>
+          <div className="claude-plan-modal claude-context-usage-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="claude-plan-modal-header">
+              <span className="claude-plan-modal-title">Context Usage — {contextUsagePopup.model}</span>
+              <button className="claude-plan-modal-close" onClick={() => setContextUsagePopup(null)}>&times;</button>
+            </div>
+            <div className="claude-plan-modal-body" style={{ padding: '12px 16px', whiteSpace: 'normal', fontFamily: 'inherit' }}>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 13 }}>
+                  <span>{contextUsagePopup.totalTokens.toLocaleString()} / {contextUsagePopup.maxTokens.toLocaleString()} tokens</span>
+                  <span style={{ color: contextUsagePopup.percentage >= 80 ? '#e05252' : contextUsagePopup.percentage >= 50 ? '#e6a700' : '#89ca78' }}>
+                    {contextUsagePopup.percentage}%
+                  </span>
+                </div>
+                <div style={{ height: 8, background: '#333', borderRadius: 4, overflow: 'hidden', display: 'flex' }}>
+                  {contextUsagePopup.categories.filter(c => c.tokens > 0).map((cat, i) => (
+                    <div key={i} style={{ width: `${(cat.tokens / contextUsagePopup!.maxTokens) * 100}%`, background: cat.color, height: '100%' }} title={`${cat.name}: ${cat.tokens.toLocaleString()}`} />
+                  ))}
+                </div>
+              </div>
+              <div style={{ fontSize: 12 }}>
+                {contextUsagePopup.categories.filter(c => c.tokens > 0).map((cat, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', opacity: cat.isDeferred ? 0.5 : 1 }}>
+                    <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: cat.color, marginRight: 6, verticalAlign: 'middle' }} />{cat.name}{cat.isDeferred ? ' (deferred)' : ''}</span>
+                    <span style={{ color: '#999' }}>{cat.tokens.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+              {contextUsagePopup.memoryFiles && contextUsagePopup.memoryFiles.length > 0 && (
+                <div style={{ marginTop: 10, borderTop: '1px solid #333', paddingTop: 8, fontSize: 11 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: '#bbb' }}>Memory Files</div>
+                  {contextUsagePopup.memoryFiles.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
+                      <span style={{ color: '#999', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.path.split('/').pop()}</span>
+                      <span style={{ color: '#666' }}>{f.tokens.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {contextUsagePopup.mcpTools && contextUsagePopup.mcpTools.length > 0 && (
+                <div style={{ marginTop: 10, borderTop: '1px solid #333', paddingTop: 8, fontSize: 11 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: '#bbb' }}>MCP Tools</div>
+                  {contextUsagePopup.mcpTools.filter(t => t.tokens > 0).slice(0, 20).map((t, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
+                      <span style={{ color: '#999' }}>{t.serverName}:{t.name}{t.isLoaded === false ? ' (deferred)' : ''}</span>
+                      <span style={{ color: '#666' }}>{t.tokens.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Subagent Modal */}
       {taskModal && (() => {
         const taskMsgs = subagentMessagesRef.current.get(taskModal.taskId) || []
@@ -3115,8 +3181,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
             <span key="gitBranch" className="claude-statusline-item">[{gitBranch}]</span>
           ),
           tokens: () => !sessionMeta ? null : (
-            <span key="tokens" className="claude-statusline-item claude-statusline-clickable" title={`in: ${sessionMeta.inputTokens.toLocaleString()} / out: ${sessionMeta.outputTokens.toLocaleString()}\nclick to show /context`}
-              onClick={() => { if (!inputValueRef.current.trim()) { setInputValue('/context'); setTimeout(() => handleSend(), 0) } }}>
+            <span key="tokens" className="claude-statusline-item claude-statusline-clickable" title={`in: ${sessionMeta.inputTokens.toLocaleString()} / out: ${sessionMeta.outputTokens.toLocaleString()}\nclick to show context breakdown`}
+              onClick={() => { window.electronAPI.claude.getContextUsage(sessionId).then(u => { if (u) setContextUsagePopup(u) }).catch(() => {}) }}>
               {(sessionMeta.inputTokens + sessionMeta.outputTokens).toLocaleString()} tok
             </span>
           ),
@@ -3132,8 +3198,8 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
             const pct = Math.round((ctxTokens / sessionMeta.contextWindow) * 100)
             const ctxColor = pct >= 80 ? '#e05252' : pct >= 50 ? '#e6a700' : '#89ca78'
             return (
-              <span key="contextPct" className="claude-statusline-item claude-statusline-clickable" style={{ color: ctxColor }} title={`context: ${ctxTokens.toLocaleString()} / ${sessionMeta.contextWindow.toLocaleString()} tokens\ntotal: ${(sessionMeta.inputTokens + sessionMeta.outputTokens).toLocaleString()} tok\nclick to show /context`}
-                onClick={() => { if (!inputValueRef.current.trim()) { setInputValue('/context'); setTimeout(() => handleSend(), 0) } }}>
+              <span key="contextPct" className="claude-statusline-item claude-statusline-clickable" style={{ color: ctxColor }} title={`context: ${ctxTokens.toLocaleString()} / ${sessionMeta.contextWindow.toLocaleString()} tokens\ntotal: ${(sessionMeta.inputTokens + sessionMeta.outputTokens).toLocaleString()} tok\nclick to show context breakdown`}
+                onClick={() => { window.electronAPI.claude.getContextUsage(sessionId).then(u => { if (u) setContextUsagePopup(u) }).catch(() => {}) }}>
                 ctx {pct}%
               </span>
             )

@@ -1464,6 +1464,25 @@ export class ClaudeAgentManager {
     }
   }
 
+  async getContextUsage(sessionId: string): Promise<{
+    categories: { name: string; tokens: number; color: string; isDeferred?: boolean }[]
+    totalTokens: number
+    maxTokens: number
+    percentage: number
+    model: string
+    memoryFiles?: { path: string; type: string; tokens: number }[]
+    mcpTools?: { name: string; serverName: string; tokens: number; isLoaded?: boolean }[]
+  } | null> {
+    const session = this.sessions.get(sessionId)
+    if (!session?.queryInstance) return null
+    try {
+      return await session.queryInstance.getContextUsage()
+    } catch (e) {
+      logger.warn('getContextUsage failed:', e)
+      return null
+    }
+  }
+
   getSessionMeta(sessionId: string): Record<string, unknown> | null {
     const session = this.sessions.get(sessionId)
     if (!session) return null
@@ -1806,6 +1825,7 @@ export class ClaudeAgentManager {
     const permissionMode = session.permissionMode
     const effort = session.effort
     const model = session.model
+    const apiVersion = session.apiVersion
 
     // Tear down old session completely
     session.abortController.abort()
@@ -1815,7 +1835,7 @@ export class ClaudeAgentManager {
     sdkSessionIds.delete(sessionId)
 
     // Start a fresh session preserving settings
-    const ok = await this.startSession(sessionId, { cwd, permissionMode })
+    const ok = await this.startSession(sessionId, { cwd, permissionMode, apiVersion })
     if (ok) {
       const newSession = this.sessions.get(sessionId)
       if (newSession) {

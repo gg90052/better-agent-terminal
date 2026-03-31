@@ -795,6 +795,7 @@ function registerProxiedHandlers() {
     return results
   })
   registerHandler('claude:get-session-meta', (_ctx, sessionId: string) => claudeManager?.getSessionMeta(sessionId))
+  registerHandler('claude:get-context-usage', (_ctx, sessionId: string) => claudeManager?.getContextUsage(sessionId))
   registerHandler('claude:resolve-permission', (_ctx, sessionId: string, toolUseId: string, result: { behavior: string; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[]; message?: string; dontAskAgain?: boolean }) => claudeManager?.resolvePermission(sessionId, toolUseId, result))
   registerHandler('claude:resolve-ask-user', (_ctx, sessionId: string, toolUseId: string, answers: Record<string, string>) => claudeManager?.resolveAskUser(sessionId, toolUseId, answers))
   registerHandler('claude:list-sessions', (_ctx, cwd: string) => claudeManager?.listSessions(cwd))
