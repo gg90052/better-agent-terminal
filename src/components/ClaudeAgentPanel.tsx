@@ -50,6 +50,8 @@ interface SessionMeta {
   contextWindow: number
   maxOutputTokens: number
   contextTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
   permissionMode?: string
 }
 
@@ -3184,6 +3186,20 @@ export function ClaudeAgentPanel({ sessionId, cwd, isActive, workspaceId, showUs
               maxOut:{(sessionMeta.maxOutputTokens / 1000).toFixed(0)}k
             </span>
           ),
+          cacheEff: () => {
+            if (!sessionMeta || sessionMeta.inputTokens <= 0) return null
+            const cacheRead = sessionMeta.cacheReadTokens || 0
+            const cacheCreate = sessionMeta.cacheCreationTokens || 0
+            const totalInput = sessionMeta.inputTokens
+            const pct = Math.round((cacheRead / totalInput) * 100)
+            const color = pct >= 70 ? '#89ca78' : pct >= 40 ? '#e6a700' : '#e05252'
+            return (
+              <span key="cacheEff" className="claude-statusline-item" style={{ color }}
+                title={`cache_read: ${cacheRead.toLocaleString()}\ncache_creation: ${cacheCreate.toLocaleString()}\ntotal_input: ${totalInput.toLocaleString()}\ncache_read / total_input = ${pct}%`}>
+                cache:{pct}%
+              </span>
+            )
+          },
           prompts: () => (
             <span key="prompts" className="claude-statusline-item claude-statusline-clickable"
               onClick={() => setShowPromptHistory(true)} title={t('claude.viewPromptHistory')}>{t('claude.prompts')}</span>

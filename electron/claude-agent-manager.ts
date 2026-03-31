@@ -116,6 +116,8 @@ interface SessionMetadata {
   contextWindow: number
   maxOutputTokens: number
   contextTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
 }
 
 interface PendingRequest {
@@ -321,6 +323,8 @@ export class ClaudeAgentManager {
           contextWindow: 0,
           maxOutputTokens: 0,
           contextTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
         },
         pendingPermissions: new Map(),
         pendingAskUser: new Map(),
@@ -868,6 +872,8 @@ export class ClaudeAgentManager {
           + (eventUsage.cache_read_input_tokens || 0)
         if (contextTokens > session.metadata.inputTokens) {
           session.metadata.inputTokens = contextTokens
+          session.metadata.cacheReadTokens = eventUsage.cache_read_input_tokens || 0
+          session.metadata.cacheCreationTokens = eventUsage.cache_creation_input_tokens || 0
         }
         if (eventUsage.output_tokens && eventUsage.output_tokens > session.metadata.outputTokens) {
           session.metadata.outputTokens = eventUsage.output_tokens
@@ -1017,6 +1023,8 @@ export class ClaudeAgentManager {
       if (resultMsg.modelUsage) {
         let totalInput = 0
         let totalOutput = 0
+        let totalCacheRead = 0
+        let totalCacheCreate = 0
         for (const [model, modelStats] of Object.entries(resultMsg.modelUsage)) {
           const stats = modelStats as { inputTokens?: number; outputTokens?: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number; contextWindow?: number }
           const cacheRead = stats.cacheReadInputTokens || 0
@@ -1025,6 +1033,8 @@ export class ClaudeAgentManager {
           logger.log(line)
           totalInput += (stats.inputTokens || 0) + cacheRead + cacheCreate
           totalOutput += stats.outputTokens || 0
+          totalCacheRead += cacheRead
+          totalCacheCreate += cacheCreate
           if (stats.contextWindow) {
             session.metadata.contextWindow = stats.contextWindow
           }
@@ -1036,6 +1046,8 @@ export class ClaudeAgentManager {
         logger.log(summary)
         session.metadata.inputTokens = totalInput
         session.metadata.outputTokens = totalOutput
+        session.metadata.cacheReadTokens = totalCacheRead
+        session.metadata.cacheCreationTokens = totalCacheCreate
       } else if (resultMsg.usage) {
         const usageFull = resultMsg.usage as { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number }
         const cacheRead = usageFull.cache_read_input_tokens || 0
@@ -1045,6 +1057,8 @@ export class ClaudeAgentManager {
         logger.log(line)
         session.metadata.inputTokens = totalInput
         session.metadata.outputTokens = usageFull.output_tokens || 0
+        session.metadata.cacheReadTokens = cacheRead
+        session.metadata.cacheCreationTokens = cacheCreate
       }
 
       if (resultMsg.usage?.input_tokens) {
