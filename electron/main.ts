@@ -300,12 +300,7 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
 
   win.on('close', (e) => {
     if (isAppQuitting) {
-      // App quitting (Cmd+Q): save all windows into profile snapshot, keep entries
-      windowRegistry.getEntry(windowId).then(async (entry) => {
-        if (entry?.profileId) {
-          await profileManager.save(entry.profileId).catch(() => { /* ignore */ })
-        }
-      }).catch(() => { /* ignore */ })
+      // App quitting (Cmd+Q): save handled by before-quit, just let it close
       return
     }
 
@@ -373,7 +368,10 @@ function createWindow(windowId: string, bounds?: { x: number; y: number; width: 
           await profileManager.deactivateProfile(profileId)
         }
       }
-      // response === 1: Close only — keep entry in registry, no snapshot update
+      // response === 1: Close only — keep entry in registry, save snapshot so it persists
+      if (response === 1 && entry.profileId) {
+        await profileManager.save(entry.profileId).catch(() => { /* ignore */ })
+      }
 
       win.destroy()
     }).catch(() => { /* ignore */ })
@@ -419,7 +417,17 @@ app.whenReady().then(async () => {
   logger.log(`[startup] app.whenReady fired at +${t0 - _t0}ms from IPC reg, +${t0 - _processStart}ms from process`)
 
   // Ensure profile system is initialized (migrates from workspaces.json on first run)
-  await windowRegistry.ensureInitialized()
+  const migratedEntries = await windowRegistry.ensureInitialized()
+
+  // If migration just happened (first run after upgrade), save migrated data as profile snapshot
+  // BEFORE clearing windows.json, so workspaces aren't lost
+  if (migratedEntries.length > 0) {
+    const profileIds = [...new Set(migratedEntries.filter(e => e.profileId).map(e => e.profileId!))]
+    for (const pid of profileIds) {
+      const saved = await profileManager.save(pid).catch(() => false)
+      logger.log(`[startup] saved migration snapshot for profile ${pid}: ${saved}`)
+    }
+  }
 
   // Collect window IDs to create
   const windowsToCreate: { id: string; bounds?: { x: number; y: number; width: number; height: number } }[] = []
@@ -591,9 +599,24 @@ function runCleanupOnce() {
   cleanupAllProcesses()
 }
 
-app.on('before-quit', () => {
-  isAppQuitting = true
-  runCleanupOnce()
+app.on('before-quit', async (e) => {
+  if (!isAppQuitting) {
+    e.preventDefault()
+    isAppQuitting = true
+
+    // Save all open windows' profiles before quitting
+    try {
+      const allEntries = await windowRegistry.readAll()
+      const profileIds = [...new Set(allEntries.filter(e => e.profileId).map(e => e.profileId!))]
+      await Promise.all(profileIds.map(pid => profileManager.save(pid).catch(() => { /* ignore */ })))
+      logger.log(`[quit] saved ${profileIds.length} profile snapshot(s)`)
+    } catch (err) {
+      logger.error(`[quit] failed to save profiles: ${err}`)
+    }
+
+    runCleanupOnce()
+    app.quit()
+  }
 })
 
 app.on('window-all-closed', () => {
